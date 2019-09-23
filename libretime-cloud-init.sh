@@ -3,10 +3,12 @@
 # Quick-n-dirty cloud-init script to configure an AWS EC2 instance to run LibreTime software
 # We mount an EBS volume, which contains database backup, which we restore from.
 
+export DEBIAN_FRONTEND=noninteractive;
+export COMPOSER_HOME=/tmp
 
 # Get fresh
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+apt-get upgrade -y
 apt-get install awscli -y
 timedatectl set-timezone Europe/London
 
