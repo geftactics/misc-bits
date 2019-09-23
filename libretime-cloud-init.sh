@@ -14,8 +14,7 @@ timedatectl set-timezone Europe/London
 instanceid=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 aws ec2 attach-volume --volume-id vol-0e18f34cbbea8ced8 --instance-id $instanceid --device /dev/xvdf --region eu-west-1
 mkdir /srv/airtime
-echo "/dev/xvdf                    /srv/airtime    ext4    defaults,nofail        0    2" >> /etc/fstab
-echo "nvme1n1                      /srv/airtime    ext4    defaults,nofail        0    2" >> /etc/fstab
+echo "UUID=a0851a45-2393-4314-b3ac-6acee9a37ea9  /srv/airtime    ext4    defaults,nofail        0    2" >> /etc/fstab
 mount -a
 chown www-data:www-data /srv/airtime
 
