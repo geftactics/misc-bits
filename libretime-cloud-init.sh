@@ -25,7 +25,8 @@ chown www-data:www-data /srv/airtime
 wget https://github.com/LibreTime/libretime/releases/download/3.0.0-alpha.8/libretime-3.0.0-alpha.8.tar.gz -O /root/libretime-3.0.0-alpha.8.tar.gz
 tar -zxvf /root/libretime-3.0.0-alpha.8.tar.gz -C /root
 cd /root/libretime-3.0.0-alpha.8
-./install --force -a -p -i
+./install -fiap
+sleep 15 # yuck
 
 # Enable auto backup to EBS volume
 echo "sudo -u postgres pg_dumpall | gzip -c > /srv/airtime/libretime-backup.gz" > /etc/cron.daily/libretime-db-backup
@@ -36,6 +37,7 @@ chmod +x /etc/cron.daily/libretime-db-backup
 cp /srv/airtime/airtime.conf /etc/airtime/airtime.conf
 cp /srv/airtime/libretime-backup.gz /tmp
 sudo -u postgres dropdb airtime
+rm -f /tmp/libretime-backup
 gunzip /tmp/libretime-backup.gz
 sudo -u postgres psql -f /tmp/libretime-backup
 
