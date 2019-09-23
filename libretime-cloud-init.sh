@@ -13,10 +13,11 @@ timedatectl set-timezone Europe/London
 # Mount and configure EBS volume
 instanceid=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 aws ec2 detach-volume --volume-id vol-0e18f34cbbea8ced8 --region eu-west-1
-sleep 15 # yuck
+sleep 10 # yuck
 aws ec2 attach-volume --volume-id vol-0e18f34cbbea8ced8 --instance-id $instanceid --device /dev/xvdf --region eu-west-1
 mkdir /srv/airtime
 echo "UUID=a0851a45-2393-4314-b3ac-6acee9a37ea9  /srv/airtime    ext4    defaults,nofail        0    2" >> /etc/fstab
+sleep 10 # yuck
 mount UUID=a0851a45-2393-4314-b3ac-6acee9a37ea9  /srv/airtime
 chown www-data:www-data /srv/airtime
 
