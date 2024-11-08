@@ -1,60 +1,64 @@
 from smartcard.CardType import ATRCardType
 from smartcard.CardRequest import CardRequest
-from smartcard.util import toBytes, toHexString
+from smartcard.util import toHexString
 from Crypto.Cipher import DES3
 import binascii
 import secrets
 
+
 # Rough POC showing how to authenticate with a MIFARE Ultralight-C card (MF0ICU2)
-# Works with an ACS ACR1552u USB reader
-# Make sure that byte 0 of 0x2 is set to 0x10 to require authentication to blocks above 0x10
+# Make sure that byte 0 of block 0x02 is set to 0x10 to require authentication for blocks above 0x10
 # This script will perform authentication using the default key, and write 0xDE 0xAD 0xBE 0xEF to 0x20
 # It will also print out all data blocks afterwards.
 
 
-KEY1 = "49454D4B41455242" # Default MIFARE Ultralight-C (BREAKMEIFYOUCAN!)
+# Default MIFARE Ultralight-C keys
+KEY1 = "49454D4B41455242" 
 KEY2 = "214E4143554F5946"
 
 
-def to_hex(byte_array):
-    return binascii.hexlify(byte_array).decode().upper()
+def send_apdu(cardservice, apdu):
+    response, sw1, sw2 = cardservice.connection.transmit(apdu)
+    if sw1 != 0x90 and sw2 != 0x00:
+        raise ValueError(f"Bad response! sw1={sw1:02X}, sw2={sw2:02X}, data={to_hex(bytes(apdu))}")
+    return response
+
+
+def send_transparent_apdu(cardservice, data):
+    # Transparent exchange (6.2.7) in ACR1552U reference manual
+    length = len(data) 
+    apdu = [0xFF, 0xC2, 0x00, 0x01] + [length+2] + [0x95] + [length] + data
+    response, sw1, sw2 = cardservice.connection.transmit(apdu)
+    if sw1 != 0x90 and sw2 != 0x00:
+        raise ValueError(f"Bad response! sw1={sw1:02X}, sw2={sw2:02X}, data={to_hex(bytes(data))}")
+    return bytes(response[14:])
 
 def read_all_blocks():
     print('Reading all data...')
-    for block in range(0x00, 0x30):
-        APDU = [0xFF, 0xC2, 0x00, 0x01, 0x04, 0x95, 0x02, 0x30, block]
-        response, sw1, sw2 = cardservice.connection.transmit(APDU)
-        block_data = response[14:18]
-        print(f" - [0x{block:02X}]: {toHexString(block_data)}")
+    for block in range(0x00, 0x2c):
+        block_data = send_transparent_apdu(cardservice, [0x30, block])[:4]
+        print(f" - [0x{block:02X}]: {to_hex(block_data)}")
 
 
+def to_hex(byte_array):
+    return toHexString(list(byte_array))
 
 
 # Look for a MIFARE Ultralight-C ATR Card type...
-cardtype = ATRCardType(toBytes("3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 3A 00 00 00 00 51"))
+cardtype = ATRCardType(bytes.fromhex("3B 8F 80 01 80 4F 0C A0 00 00 03 06 03 00 3A 00 00 00 00 51"))
 cardrequest = CardRequest(timeout=10, cardType=cardtype)
 cardservice = cardrequest.waitforcard()
 cardservice.connection.connect()
 
 
-# Start Transparent Session
-APDU = [0xFF, 0xC2, 0x00, 0x00, 0x02, 0x81, 0x00]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
-
-
-# ISO 14443-4A Active
-APDU = [0xFF, 0xC2, 0x00, 0x02, 0x04, 0x8F, 0x02, 0x00, 0x03]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
+# Transparent session and ISO 14443-4A Active
+send_apdu(cardservice, [0xFF, 0xC2, 0x00, 0x00, 0x02, 0x81, 0x00])
+send_apdu(cardservice, [0xFF, 0xC2, 0x00, 0x02, 0x04, 0x8F, 0x02, 0x00, 0x03])
 
 
 # Start Authenticate
-print("Start Authenticate...")
-APDU = [0xFF, 0xC2, 0x00, 0x01, 0x04, 0x95, 0x02, 0x1A, 0x00]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
-if not (len(response) > 14 and response[14] == 0xAF):
-    raise ValueError("Invalid response")
-encRndB = bytes(response[15:23])
-print(" - EncRndB:", encRndB.hex().upper())
+encRndB = send_transparent_apdu(cardservice, [0x1A, 0x00])[1:]
+print(" - EncRndB:", to_hex(encRndB))
 
 
 # Decipher ek(RndB) to retrieve RndB
@@ -62,7 +66,7 @@ key = bytes.fromhex(KEY1 + KEY2)
 iv = bytes.fromhex("0000000000000000")
 cipher_dec = DES3.new(key + key[:8], DES3.MODE_CBC, iv)
 rndB = cipher_dec.decrypt(encRndB)
-print(" - Retrieved RndB:", to_hex(rndB))
+print(" - RndB:", to_hex(rndB))
 
 
 # Generate RndA
@@ -77,36 +81,31 @@ print(" - RndB_rot:", to_hex(rndB_rot))
 
 # Concatenate
 rndA_rndB_rot = rndA + rndB_rot
-print(" - RndA+RndB:", to_hex(rndA_rndB_rot))
+print(" - RndA+RndB_rot:", to_hex(rndA_rndB_rot))
 
 
-# Encrypt (RndA+RndB')
+# Encrypt (RndA+RndB)
 iv = encRndB
-print(" - iv:", iv.hex().upper())
 cipher_enc = DES3.new(key + key[:8], DES3.MODE_CBC, iv)
 encRndA_rndB_rot = cipher_enc.encrypt(rndA_rndB_rot)
+print(" - iv:", to_hex(iv))
 print(" - Enc(RndA+RndB):", to_hex(encRndA_rndB_rot))
 
 
-# Response to send back to card (AF + Enc(RndA+RndB))
-response_to_card = b'\xAF' + encRndA_rndB_rot
+# Response to send back to card (0xAF + Enc(RndA+RndB))
+response_to_card = [0xAF] + list(encRndA_rndB_rot)
+encRndA = send_transparent_apdu(cardservice, response_to_card)[1:]
 print("Response to Card:", to_hex(response_to_card))
-APDU = [0xFF, 0xC2, 0x00, 0x01, 0x13, 0x95, len(response_to_card)] + list(response_to_card)
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
-if not (len(response) > 22 and response[14] == 0x00):
-    raise ValueError("Invalid response")
-encRndA = bytes(response[15:23])
-print(" - EncRndA:", encRndA.hex().upper())
-
+print(" - EncRndA:", to_hex(encRndA))
 
 
 # Final check
 iv = encRndA_rndB_rot[-8:]
-print(" - iv:", iv.hex().upper())
 cipher_dec = DES3.new(key + key[:8], DES3.MODE_CBC, iv)
 rndA_prime = cipher_dec.decrypt(encRndA)
-print(" - Deciphered RndA:", to_hex(rndA_prime))
 rndA_rot = rndA[1:] + rndA[:1]
+print(" - iv:", to_hex(iv))
+print(" - Deciphered RndA:", to_hex(rndA_prime))
 print(" - RndA rotated:", to_hex(rndA_rot))
 
 if rndA_prime == rndA_rot:
@@ -115,21 +114,20 @@ else:
     raise ValueError("Authentication failed: RndA does not match")
 
 
-
-# We have to use card specific write command as we are in transparent mode
+# Confirm authentication by writing to 0x20
 print('Writing BLOCK 0x20...')
-APDU = [0xFF, 0xC2, 0x00, 0x01, 0x08, 0x95, 0x06, 0xA2, 0x20, 0xDE, 0xAD, 0xBE, 0xEF]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
-print('Reading BLOCK 0x20...')
-APDU = [0xFF, 0xC2, 0x00, 0x01, 0x04, 0x95, 0x02, 0x30, 0x20]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
-block_data = bytes(response[14:18]) # function returns 16 bytes
-print(f" - Data: {block_data.hex().upper()}")
+APDU_CMD = [0xA2, 0x20]
+data = [0xDE, 0xAD, 0xBE, 0xEF]
+send_transparent_apdu(cardservice, APDU_CMD + data)
 
+
+# Confirm authentication by reading from 0x20
+print('Reading BLOCK 0x20...')
+APDU_CMD = [0x30, 0x20]
+block_data = send_transparent_apdu(cardservice, APDU_CMD)[:4]
+print(f" - Data: {to_hex(block_data)}")
 
 read_all_blocks()
 
-
 # End Transparent Session
-APDU = [0xFF, 0xC2, 0x00, 0x00, 0x02, 0x82, 0x00]
-response, sw1, sw2 = cardservice.connection.transmit(APDU)
+send_apdu(cardservice, [0xFF, 0xC2, 0x00, 0x00, 0x02, 0x82, 0x00])
