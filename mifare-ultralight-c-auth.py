@@ -6,6 +6,7 @@ import binascii
 import secrets
 
 # Rough POC showing how to authenticate with a MIFARE Ultralight-C card (MF0ICU2)
+# Works with an ACS ACR1552u USB reader
 # Make sure that byte 0 of 0x2 is set to 0x10 to require authentication to blocks above 0x10
 # This script will perform authentication using the default key, and write 0xDE 0xAD 0xBE 0xEF to 0x20
 # It will also print out all data blocks afterwards.
