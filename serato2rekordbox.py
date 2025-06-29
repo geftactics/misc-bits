@@ -71,7 +71,8 @@ def create_track_element(track_id, filepath):
     name = audio.get("TIT2", filename).text[0] if "TIT2" in audio else os.path.splitext(filename)[0]
     artist = audio.get("TPE1", [""])[0]
     album = audio.get("TALB", [""])[0]
-    genre = audio.get("TCON", [""])[0]
+    genre = audio.get("TCON")
+    genre = genre.text[0] if genre and hasattr(genre, "text") and genre.text else ""
     bpm = float(audio.get("TBPM")[0]) if "TBPM" in audio else None
     comment = ""
     for comm in tags.getall("COMM"):
@@ -133,7 +134,7 @@ def create_track_element(track_id, filepath):
                 "Blue": str(b)
             })
     except Exception as e:
-        print(f"⚠️  No cues for {filename}: {e}")
+        print(f"No cues for {filename}: {e}")
 
     return track
 
@@ -180,7 +181,7 @@ def main():
     parser.add_argument("crate", help="Path to Serato crate file (.crate)")
     args = parser.parse_args()
 
-    print(f"✅ Using Serato crate: {args.crate}")
+    print(f"Using Serato crate: {args.crate}")
     root = build_rekordbox_xml(args.crate)
 
     import xml.dom.minidom
